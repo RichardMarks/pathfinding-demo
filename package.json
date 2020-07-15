@@ -1,0 +1,10 @@
+{
+  "name": "dijkstra",
+  "version": "1.1.0",
+  "description": "Dijkstra's Algorithm 2D Path-Finding Demo in pure vanilla JavaScript",
+  "main": "main.js",
+  "repository": "https://github.com/RichardMarks/pathfinding-demo.git",
+  "author": "Richard Marks <ccpsceo@gmail.com>",
+  "license": "MIT",
+  "private": true
+}

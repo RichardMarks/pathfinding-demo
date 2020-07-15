@@ -1,89 +1,57 @@
+import Logger from './logger.js'
+import Renderer from './renderer.js'
+import PathFinder from './pathfinder.js'
+import Grid from './grid.js'
+
+console.log({
+  Logger,
+  Renderer,
+  PathFinder,
+  Grid
+})
+
 const GRID_COLUMNS = 10
 const GRID_ROWS = 10
 
+const EMPTY_ID = 0
 const START_ID = 1
 const FINISH_ID = 2
 const WALL_ID = 3
 
 let DIAGONALS = false
 
-const canvas = document.createElement('canvas')
-const ctx = canvas.getContext('2d')
-
-const con = document.createElement('div')
-con.id = 'con'
-
-const log = function (...what) {
-  what.forEach(x => {
-    const line = document.createElement('pre')
-    if (typeof x === 'string' || typeof x === 'number') {
-      x = `${x}`
-    } else {
-      if (Array.isArray(x)) {
-        x = JSON.stringify(x)
-      } else {
-        x = JSON.stringify(x, null, 2)
-      }
-    }
-    line.innerText = x
-    con.appendChild(line)
-  })
-}
-
-const logGrid = grid => {
-  const out = []
-  for (let y = 0; y < GRID_ROWS; y++) {
-    const row = []
-    for (let x = 0; x < GRID_COLUMNS; x++) {
-      row.push(grid[x+y*GRID_COLUMNS])
-    }
-    out.push(row.join(' '))
-  }
-  log(out.join('\n'))
-}
-
-log.clear = () => {
-  while (con.firstChild) {
-    con.removeChild(con.firstChild)
-  }
-}
-
 const boot = () => {
-  const neighborsOf = (idx, q) => {
-    const neighbors = []
+  const logger = Logger.create({ id: 'con' })
+  const log = logger.log
 
-    const pick = (x, y) => {
-      const item = q[x + y * GRID_COLUMNS]
-      if (item) {
-        neighbors.push(x + y * GRID_COLUMNS)
-      } else {
-        // log(`index ${x + y * GRID_COLUMNS} (${x}, ${y}) is not in q`)
+  const logGrid = grid => {
+    const out = []
+    for (let y = 0; y < GRID_ROWS; y++) {
+      const row = []
+      for (let x = 0; x < GRID_COLUMNS; x++) {
+        row.push(grid[x+y*GRID_COLUMNS])
       }
+      out.push(row.join(' '))
     }
-
-    const x = idx % GRID_COLUMNS
-    const y = ~~(idx / GRID_COLUMNS)
-
-    y - 1 >= 0 && pick(x, y - 1)
-    y + 1 < GRID_ROWS && pick(x, y + 1)
-    x - 1 >= 0 && pick(x - 1, y)
-    x + 1 < GRID_COLUMNS && pick(x + 1, y)
-
-    if (DIAGONALS) {
-      x - 1 >= 0 && y - 1 >= 0 && pick(x - 1, y - 1)
-      x + 1 < GRID_COLUMNS && y - 1 >= 0 && pick(x + 1, y - 1)
-      x - 1 >= 0 && y + 1 < GRID_ROWS && pick(x - 1, y + 1)
-      x + 1 < GRID_COLUMNS && y + 1 < GRID_ROWS && pick(x + 1, y + 1)
-    }
-
-    return neighbors
+    log(out.join('\n'))
   }
 
-  const distanceBetween = (a, b) => {
-    const dx = (b % GRID_COLUMNS) - (a % GRID_COLUMNS)
-    const dy = ~~(b / GRID_COLUMNS) - ~~(a / GRID_COLUMNS)
-    return Math.sqrt(dx * dx + dy * dy)
-  }
+  const renderer = Renderer.create({
+    width: 512,
+    height: 512,
+    parentElement: document.body
+  })
+
+  const { canvas, ctx } = renderer
+
+  const grid = Grid.create({
+    numColumns: GRID_COLUMNS,
+    numRows: GRID_ROWS,
+    emptyCell: EMPTY_ID,
+    obstacleCells: [WALL_ID]
+  })
+
+  const pathFinder = PathFinder.create({ grid })
 
   const findShortestPath = ({
     grid, // 1d array
@@ -92,79 +60,16 @@ const boot = () => {
   }) => {
     log(`Finding path from ${start} to ${finish}`)
 
-    const q = {}
-    const dist = {}
-    const prev = {}
-    const MAX_DISTANCE = GRID_COLUMNS * GRID_ROWS
-
-    grid.forEach((t, idx) => {
-      dist[idx] = { distance: MAX_DISTANCE, index: idx }
-      if (t !== 3) {
-        q[idx] = true
-      }
+    const path = pathFinder.findShortestPath({
+      grid,
+      startIndex: start,
+      finishIndex: finish,
+      allowDiagonalMovement: DIAGONALS
     })
-
-    dist[start].distance = 0
-
-    // log(q)
-
-    const getIndexOfMinimumDistance = q => {
-      let minDist = MAX_DISTANCE
-      let minIdx = -1
-      const dists = Object.keys(dist).map(k => dist[k])
-      dists.filter(x => q[x.index]).forEach(({ distance, index }) => {
-        if (distance < minDist) {
-          // log(`${index}: comparing ${distance} to ${minDist} (${distance < minDist})`)
-          minDist = distance
-          minIdx = index
-        }
-      })
-      // log(`minimum distance index is ${minIdx}`)
-      return minIdx
-    }
-
-    while (Object.keys(q).length) {
-      // log(`${Object.keys(q).length} in q`)
-      const indexOfMinimumDistance = getIndexOfMinimumDistance(q)
-
-      if (indexOfMinimumDistance < 0) {
-        // log('min dist is < 0')
-        break
-      }
-
-      const d = dist[indexOfMinimumDistance]
-
-      delete q[indexOfMinimumDistance]
-
-      if (indexOfMinimumDistance === finish) {
-        // log('min dist is finish')
-        break
-      }
-
-      const neighbors = neighborsOf(indexOfMinimumDistance, q)
-      // log('neighbors', neighbors)
-      neighbors.forEach(n => {
-        const alt = d.distance + distanceBetween(indexOfMinimumDistance, n)
-        if (alt < dist[n].distance) {
-          dist[n] = { index: dist[n].index, distance: alt }
-          prev[n] = indexOfMinimumDistance
-        }
-      })
-    }
-
-    const path = []
-
-    if (prev[finish] || start === finish) {
-      let u = finish
-      while (u !== undefined) {
-        path.unshift(u)
-        u = prev[u]
-      }
-    }
 
     if (path.length) {
       log(`The shortest path to target is ${path.length - 1} step${path.length <= 2 ? '' : 's'}`, path)
-      const pg = grid.slice()
+      const pg = grid.data.slice()
       const pp = path.slice()
       pp.shift()
       pp.pop()
@@ -183,12 +88,12 @@ const boot = () => {
     const colors = ['#000', '#0f0', '#f00', '#aaa']
     ctx.fillStyle = '#000'
     ctx.fillRect(0, 0, canvas.width, canvas.height)
-    for (let i = 0; i < grid.length; i++) {
+    for (let i = 0; i < grid.size; i++) {
       const tx = i % GRID_COLUMNS
       const ty = ~~(i / GRID_COLUMNS)
       const x = tx * tw
       const y = ty * th
-      const t = grid[i]
+      const t = grid.readIndex(i)
       const color = colors[t]
       if (t) {
         if (grid.selectStart && t == START_ID) {
@@ -232,7 +137,7 @@ const boot = () => {
   }
 
   const demo = {
-    grid: new Array(GRID_COLUMNS * GRID_ROWS).fill(0),
+    grid,
     start: 22,
     finish: 77,
     path: []
@@ -244,12 +149,8 @@ const boot = () => {
   }
 
   const initializeDemo = () => {
-    canvas.width = 512
-    canvas.height = 512
-
     const columns = document.createElement('div')
     columns.className = 'columns'
-
 
     const header = document.createElement('header')
     const headerH1 = document.createElement('h1')
@@ -274,7 +175,7 @@ const boot = () => {
       <p>Toggle Enable Diagonal Movement to see how 4 vs 8 directional movement affects the shortest path.</p>
     `
 
-    box.appendChild(con)
+    box.appendChild(logger.element)
     box.appendChild(help)
 
     const lbox = document.createElement('div')
@@ -289,7 +190,7 @@ const boot = () => {
     toggleDiagonalsCheck.checked = !!DIAGONALS
     toggleDiagonalsCheck.addEventListener('change', () => {
       DIAGONALS = !DIAGONALS
-      log.clear()
+      logger.clear()
       demo.path = findShortestPath({
         grid: demo.grid,
         start: demo.start,
@@ -301,30 +202,19 @@ const boot = () => {
     lbox.appendChild(toggleDiagonalsCheck)
     lbox.appendChild(toggleDiagonalsLabel)
 
-
-
     columns.appendChild(lbox)
     columns.appendChild(box)
 
     const grid = demo.grid
 
     // set start and finish points
-    grid[demo.start] = START_ID
-    grid[demo.finish] = FINISH_ID
+    grid.writeIndex(demo.start, START_ID)
+    grid.writeIndex(demo.finish, FINISH_ID)
 
     // add a wall
-    grid[20] = WALL_ID
-    grid[41] = WALL_ID
-    grid[42] = WALL_ID
-    grid[43] = WALL_ID
-    grid[44] = WALL_ID
-    grid[45] = WALL_ID
-    grid[46] = WALL_ID
-    grid[47] = WALL_ID
-    grid[48] = WALL_ID
-    grid[49] = WALL_ID
-    grid[54] = WALL_ID
-    grid[64] = WALL_ID
+    const wallIndices = [20, 41, 42, 43, 45, 46, 47, 48, 49, 54, 64]
+
+    wallIndices.forEach(index => grid.writeIndex(index, WALL_ID))
 
     demo.path = findShortestPath({
       grid,
@@ -333,27 +223,31 @@ const boot = () => {
     })
 
     const moveStartToIndex = index => {
-      const x = index % GRID_COLUMNS
-      const y = ~~(index / GRID_COLUMNS)
+      const { x, y } = grid.indexToCoord(index)
+
       log(`Moving START to ${index} (${x}, ${y})`)
-      demo.grid[demo.start] = 0
+
+      grid.writeIndex(demo.start, EMPTY_ID)
       demo.start = index
-      demo.grid[demo.start] = START_ID
+      grid.writeIndex(demo.start, START_ID)
     }
 
     const moveFinishToIndex = index => {
-      const x = index % GRID_COLUMNS
-      const y = ~~(index / GRID_COLUMNS)
+      const { x, y } = grid.indexToCoord(index)
+
       log(`Moving FINISH to ${index} (${x}, ${y})`)
-      demo.grid[demo.finish] = 0
+
+      grid.writeIndex(demo.finish, EMPTY_ID)
       demo.finish = index
-      demo.grid[demo.finish] = FINISH_ID
+      grid.writeIndex(demo.finish, FINISH_ID)
     }
 
     const toggleWall = index => {
-      demo.grid[index] = demo.grid[index] === WALL_ID
-        ? 0
+      const wallState = grid.readIndex(index) === WALL_ID
+        ? EMPTY_ID
         : WALL_ID
+
+      grid.writeIndex(index, wallState)
     }
 
     const getIndexFromMouseEvent = mouseEvent => {
@@ -369,11 +263,6 @@ const boot = () => {
     }
 
     canvas.oncontextmenu = e => e.preventDefault()
-
-    canvas.addEventListener('mouseup', mouseEvent => {
-      // delete demo.grid.ghostX
-      // delete demo.grid.ghostY
-    }, false)
 
     canvas.addEventListener('mousemove', mouseEvent => {
       if (demo.grid.selectStart || demo.grid.selectFinish) {
@@ -394,15 +283,17 @@ const boot = () => {
       demo.grid.ghostX = x
       demo.grid.ghostY = y
 
-      log.clear()
+      logger.clear()
 
-      if (demo.grid[index] === START_ID) {
+      const currentCell = grid.readIndex(index)
+
+      if (currentCell === START_ID) {
         demo.grid.selectFinish = false
         demo.grid.selectStart = !demo.grid.selectStart
         if (demo.grid.selectStart) {
           log('Click another tile to move the START position')
         }
-      } else if (demo.grid[index] === FINISH_ID) {
+      } else if (currentCell === FINISH_ID) {
         demo.grid.selectStart = false
         demo.grid.selectFinish = !demo.grid.selectFinish
         if (demo.grid.selectFinish) {
@@ -410,7 +301,7 @@ const boot = () => {
         }
       } else {
         if (demo.grid.selectStart) {
-          if (demo.grid[index] !== 0) {
+          if (currentCell !== EMPTY_ID) {
             log('Cannot move to an occupied location!')
             log('Click another tile to move the START position')
           } else {
@@ -418,7 +309,7 @@ const boot = () => {
             demo.grid.selectStart = !demo.grid.selectStart
           }
         } else if (demo.grid.selectFinish) {
-          if (demo.grid[index] !== 0) {
+          if (currentCell !== EMPTY_ID) {
             log('Cannot move to an occupied location!')
             log('Click another tile to move the FINISH position')
           } else {
@@ -430,21 +321,6 @@ const boot = () => {
         }
       }
 
-
-      // toggleWall(index)
-
-//       if (demo.grid[index] !== 0) {
-//         log('Cannot move to an occupied location!')
-//         return
-//       }
-//       log.clear()
-
-
-//       if (!clickEvent.button) {
-//         moveStartToIndex(index)
-//       } else {
-//         moveFinishToIndex(index)
-//       }
       if (!demo.grid.selectStart && !demo.grid.selectFinish) {
         demo.path = findShortestPath({
           grid: demo.grid,
@@ -452,7 +328,6 @@ const boot = () => {
           finish: demo.finish
         })
       }
-      // draw()
     }, false)
   }
 
@@ -460,8 +335,10 @@ const boot = () => {
 
   const mainLoop = () => {
     draw()
+
     window.requestAnimationFrame(mainLoop)
   }
+
   mainLoop()
 }
 
